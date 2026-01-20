@@ -1,0 +1,51 @@
+# Reusable Python linting workflow for SomoneIT repositories
+# Usage:
+#   jobs:
+#     lint:
+#       uses:  SomoneIT/. github/. github/workflows/python-lint. yml@main
+
+name: Python Lint
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: "Directory containing the Python project"
+        required: false
+        type: string
+        default: "."
+      python-version:
+        description: "Python version to use"
+        required: false
+        type: string
+        default: "3.x"
+
+jobs:
+  lint:
+    name: Python Code Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Lint with Ruff
+        run: uvx ruff check --output-format=github
+
+      - name: Check formatting with Ruff
+        run: uvx ruff format --check --diff
+
+      - name: Type check with ty
+        run: uvx ty check
