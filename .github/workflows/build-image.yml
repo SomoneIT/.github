@@ -117,6 +117,7 @@ jobs:
         id: docker-scout
         uses: docker/scout-action@v1
         with:
+          organization: ${{ inputs.image-org }}
           command: cves,recommendations,compare
           to-latest: true
           ignore-base: true
