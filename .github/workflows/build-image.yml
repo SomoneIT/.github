@@ -82,11 +82,20 @@ jobs:
         run: |
           # Remove 'v' prefix if present for parsing
           VERSION_NUM="${VERSION#v}"
-          # Extract major.minor.patch (ignore -rc suffix for these)
+          # Remove -rc suffix if present
+          VERSION_NUM="${VERSION_NUM%%-rc*}"
+          # Extract major.minor.patch
           MAJOR=$(echo "$VERSION_NUM" | cut -d. -f1)
           MINOR=$(echo "$VERSION_NUM" | cut -d. -f2)
+          PATCH=$(echo "$VERSION_NUM" | cut -d. -f3)
           echo "major=v$MAJOR" >> "$GITHUB_OUTPUT"
           echo "minor=v$MAJOR.$MINOR" >> "$GITHUB_OUTPUT"
+          # If patch is 0, this is the first release of this minor version
+          if [[ "$PATCH" == "0" ]]; then
+            echo "compare_target=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "compare_target=v$MAJOR.$MINOR" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
@@ -115,11 +124,13 @@ jobs:
 
       - name: Docker Scout
         id: docker-scout
+        continue-on-error: true
         uses: docker/scout-action@v1
         with:
           organization: ${{ inputs.image-org }}
           command: cves,recommendations,compare
-          to-latest: true
+          image: ${{ inputs.image-org }}/${{ inputs.image-name }}:${{ inputs.image-version }}
+          to: ${{ inputs.image-org }}/${{ inputs.image-name }}:${{ steps.semver.outputs.compare_target }}
           ignore-base: true
           ignore-unchanged: true
           only-fixed: true
