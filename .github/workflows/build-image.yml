@@ -98,7 +98,7 @@ jobs:
             type=raw,value=${{ inputs.image-version }}
             type=raw,value=${{ steps.semver.outputs.minor }},enable=${{ steps.check_rc.outputs.is_rc == 'false' }}
             type=raw,value=${{ steps.semver.outputs.major }},enable=${{ steps.check_rc.outputs.is_rc == 'false' }}
-            type=raw,value=latest,enable=${{ steps.version.outputs.is_rc == 'false' }}
+            type=raw,value=latest,enable=${{ steps.check_rc.outputs.is_rc == 'false' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
