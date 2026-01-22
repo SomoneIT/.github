@@ -39,11 +39,6 @@ on:
         description: "Docker Hub token for authentication"
         required: true
 
-env:
-  IMAGE_ORG: ${{ inputs.image-org }}
-  IMAGE_NAME: ${{ inputs.image-name }}
-  VERSION: ${{ inputs.image-version }}
-
 jobs:
   build-and-push-images:
     runs-on: ubuntu-latest
@@ -97,7 +92,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE_ORG }}/${{ env.IMAGE_NAME }}
+          images: ${{ inputs.image-org }}/${{ inputs.image-name }}
           tags: |
             type=raw,value=${{ inputs.image-version }}
             type=raw,value=${{ steps.semver.outputs.minor }},enable=${{ steps.check_rc.outputs.is_rc == 'false' }}
@@ -115,12 +110,12 @@ jobs:
           sbom: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=docker,dest=${{ runner.temp }}/${{ env.IMAGE_NAME }}.tar
+          outputs: type=docker,dest=${{ runner.temp }}/${{ inputs.image-name }}.tar
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.IMAGE_NAME }}
-          path: ${{ runner.temp }}/${{ env.IMAGE_NAME }}.tar
+          name: ${{ inputs.image-name }}
+          path: ${{ runner.temp }}/${{ inputs.image-name }}.tar
