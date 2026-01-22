@@ -29,6 +29,11 @@ on:
         required: false
         type: string
         default: "./Dockerfile"
+      update-version-file:
+        description: "Whether to update version file in the repo"
+        required: false
+        type: boolean
+        default: false
     secrets:
       dockerhub-token:
         description: "Docker Hub token for authentication"
@@ -48,6 +53,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Update version.txt with release tag
+        if: ${{ inputs.update-version-file == 'true' }}
+        run: |
+          echo "${{ inputs.image-version }}" > ${{ inputs.context-path }}/version.txt
+          echo "Updated version.txt to: $(cat ${{ inputs.context-path }}/version.txt)"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -100,3 +111,16 @@ jobs:
           sbom: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Save Docker image
+        run: |
+          # Pull the image we just pushed
+          docker pull ${{ env.IMAGE_ORG }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+          # Save it to a tar file
+          docker save -o ${{ runner.temp }}/${{ env.IMAGE_NAME }}.tar ${{ env.IMAGE_ORG }}/${{ env.IMAGE_NAME }}:${{ env.VERSION }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.IMAGE_NAME }}
+          path: ${{ runner.temp }}/${{ env.IMAGE_NAME }}.tar
