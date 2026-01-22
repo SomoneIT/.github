@@ -19,6 +19,11 @@ on:
         description: "Docker Hub username for authentication"
         required: true
         type: string
+      context-path:
+        description: "Path to the build context"
+        required: false
+        type: string
+        default: "."
       dockerfile-path:
         description: "Path to the Dockerfile"
         required: false
@@ -87,7 +92,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ inputs.context-path }}
           file: ${{ inputs.dockerfile-path }}
           pull: true
           push: true
