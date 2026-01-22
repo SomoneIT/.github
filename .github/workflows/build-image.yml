@@ -110,7 +110,6 @@ jobs:
           sbom: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=oci,dest=${{ runner.temp }}/${{ inputs.image-name }}.tar
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -123,6 +122,16 @@ jobs:
           ignore-base: true
           ignore-unchanged: true
           only-fixed: true
+
+      - name: Save Docker image
+        env:
+          IMAGE_ORG: ${{ inputs.image-org }}
+          IMAGE_NAME: ${{ inputs.image-name }}
+          VERSION: ${{ inputs.image-version }}
+          TEMP_DIR: ${{ runner.temp }}
+        run: |
+          docker pull "$IMAGE_ORG/$IMAGE_NAME:$VERSION"
+          docker save -o "$TEMP_DIR/$IMAGE_NAME.tar" "$IMAGE_ORG/$IMAGE_NAME:$VERSION"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
