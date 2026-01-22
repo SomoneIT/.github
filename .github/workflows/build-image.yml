@@ -1,0 +1,152 @@
+name: Build and publish Docker image
+
+on:
+  workflow_call:
+    inputs:
+      image-org:
+        description: "Docker image organization (user or org)"
+        required: true
+        type: string
+      image-name:
+        description: "Docker image name"
+        required: true
+        type: string
+      image-version:
+        description: "Version tag for the Docker image"
+        required: true
+        type: string
+      dockerhub-username:
+        description: "Docker Hub username for authentication"
+        required: true
+        type: string
+      context-path:
+        description: "Path to the build context"
+        required: false
+        type: string
+        default: "."
+      dockerfile-path:
+        description: "Path to the Dockerfile"
+        required: false
+        type: string
+        default: "./Dockerfile"
+      update-version-file:
+        description: "Whether to update version file in the repo"
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      dockerhub-token:
+        description: "Docker Hub token for authentication"
+        required: true
+
+jobs:
+  build-and-push-images:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Update version.txt with release tag
+        if: ${{ inputs.update-version-file }}
+        env:
+          IMAGE_VERSION: ${{ inputs.image-version }}
+          CONTEXT_PATH: ${{ inputs.context-path }}
+        run: |
+          echo "$IMAGE_VERSION" > "$CONTEXT_PATH/version.txt"
+          echo "Updated version.txt to: $(cat "$CONTEXT_PATH/version.txt")"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to the Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ inputs.dockerhub-username }}
+          password: ${{ secrets.dockerhub-token }}
+
+      - name: Check if release candidate
+        id: check_rc
+        env:
+          VERSION: ${{ inputs.image-version }}
+        run: |
+          if [[ "$VERSION" == *"-rc"* ]]; then
+            echo "is_rc=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_rc=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract version components
+        id: semver
+        env:
+          VERSION: ${{ inputs.image-version }}
+        run: |
+          # Remove 'v' prefix if present for parsing
+          VERSION_NUM="${VERSION#v}"
+          # Remove -rc suffix if present
+          VERSION_NUM="${VERSION_NUM%%-rc*}"
+          # Extract major.minor.patch
+          MAJOR=$(echo "$VERSION_NUM" | cut -d. -f1)
+          MINOR=$(echo "$VERSION_NUM" | cut -d. -f2)
+          PATCH=$(echo "$VERSION_NUM" | cut -d. -f3)
+          echo "major=v$MAJOR" >> "$GITHUB_OUTPUT"
+          echo "minor=v$MAJOR.$MINOR" >> "$GITHUB_OUTPUT"
+          # If patch is 0, this is the first release of this minor version
+          if [[ "$PATCH" == "0" ]]; then
+            echo "compare_target=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "compare_target=v$MAJOR.$MINOR" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ inputs.image-org }}/${{ inputs.image-name }}
+          tags: |
+            type=raw,value=${{ inputs.image-version }}
+            type=raw,value=${{ steps.semver.outputs.minor }},enable=${{ steps.check_rc.outputs.is_rc == 'false' }}
+            type=raw,value=${{ steps.semver.outputs.major }},enable=${{ steps.check_rc.outputs.is_rc == 'false' }}
+            type=raw,value=latest,enable=${{ steps.check_rc.outputs.is_rc == 'false' }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context-path }}
+          file: ${{ inputs.dockerfile-path }}
+          pull: true
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Docker Scout
+        id: docker-scout
+        continue-on-error: true
+        uses: docker/scout-action@v1
+        with:
+          organization: ${{ inputs.image-org }}
+          command: cves,recommendations,compare
+          image: ${{ inputs.image-org }}/${{ inputs.image-name }}:${{ inputs.image-version }}
+          to: ${{ inputs.image-org }}/${{ inputs.image-name }}:${{ steps.semver.outputs.compare_target }}
+          ignore-base: true
+          ignore-unchanged: true
+          only-fixed: true
+
+      - name: Save Docker image
+        env:
+          IMAGE_ORG: ${{ inputs.image-org }}
+          IMAGE_NAME: ${{ inputs.image-name }}
+          VERSION: ${{ inputs.image-version }}
+          TEMP_DIR: ${{ runner.temp }}
+        run: |
+          docker pull "$IMAGE_ORG/$IMAGE_NAME:$VERSION"
+          docker save -o "$TEMP_DIR/$IMAGE_NAME.tar" "$IMAGE_ORG/$IMAGE_NAME:$VERSION"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.image-name }}
+          path: ${{ runner.temp }}/${{ inputs.image-name }}.tar
