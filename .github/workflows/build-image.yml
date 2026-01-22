@@ -19,15 +19,15 @@ on:
         description: "Docker Hub username for authentication"
         required: true
         type: string
-      dockerhub-token:
-        description: "Docker Hub token for authentication"
-        required: true
-        type: string
       dockerfile-path:
         description: "Path to the Dockerfile"
         required: false
         type: string
         default: "./Dockerfile"
+    secrets:
+      dockerhub-token:
+        description: "Docker Hub token for authentication"
+        required: true
 
 env:
   IMAGE_ORG: ${{ inputs.image-org }}
@@ -51,7 +51,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           username: ${{ inputs.dockerhub-username }}
-          password: ${{ inputs.dockerhub-token }}
+          password: ${{ secrets.dockerhub-token }}
 
       - name: Check if release candidate
         id: check_rc
