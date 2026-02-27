@@ -75,6 +75,20 @@ jobs:
             echo "is_rc=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Check if this is the latest release
+        id: is_latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.image-version }}
+        run: |
+          LATEST_TAG=$(gh api "repos/${{ github.repository }}/releases/latest" \
+            --jq '.tag_name' 2>/dev/null || echo "")
+          if [ "$LATEST_TAG" = "$VERSION" ]; then
+            echo "is_latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_latest=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Extract version components
         id: semver
         env:
@@ -106,7 +120,7 @@ jobs:
             type=raw,value=${{ inputs.image-version }}
             type=raw,value=${{ steps.semver.outputs.minor }},enable=${{ steps.check_rc.outputs.is_rc == 'false' }}
             type=raw,value=${{ steps.semver.outputs.major }},enable=${{ steps.check_rc.outputs.is_rc == 'false' }}
-            type=raw,value=latest,enable=${{ steps.check_rc.outputs.is_rc == 'false' }}
+            type=raw,value=latest,enable=${{ steps.check_rc.outputs.is_rc == 'false' && steps.is_latest.outputs.is_latest == 'true' }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
