@@ -1,0 +1,24 @@
+name: Backport
+
+on:
+  pull_request_target:
+    types: [opened, reopened, labeled, closed]
+
+permissions:
+  contents: read
+
+jobs:
+  backport:
+    # Pin to a commit SHA or a tag instead of @main for reproducible runs.
+    uses: SomoneIT/.github/.github/workflows/backport.yml@main
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      policy-repo: ""
+      policy-path: docs/support-policy.json
+      policy-ref: main
+      release-branch-prefix: releases/v
+    secrets:
+      COPILOT_AGENT_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN }}
+      BACKPORT_TOKEN: ${{ secrets.BACKPORT_TOKEN }}

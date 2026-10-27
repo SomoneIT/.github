@@ -1,0 +1,8 @@
+{
+  "name": "Copilot PR auto-fix",
+  "description": "Ask Copilot to fix a failing CI workflow on pull requests.",
+  "iconName": "octicon workflow",
+  "categories": [
+    "Automation"
+  ]
+}

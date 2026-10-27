@@ -1,0 +1,19 @@
+name: Copilot lessons on merge
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  lessons:
+    # Pin to a commit SHA or a tag instead of @main for reproducible runs.
+    uses: SomoneIT/.github/.github/workflows/copilot-lessons-on-merge.yml@main
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    secrets:
+      COPILOT_AGENT_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN }}

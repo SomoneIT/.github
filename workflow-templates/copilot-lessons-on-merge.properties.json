@@ -1,0 +1,8 @@
+{
+  "name": "Copilot lessons on merge",
+  "description": "Record review lessons in copilot-lessons.md after a merge.",
+  "iconName": "octicon workflow",
+  "categories": [
+    "Automation"
+  ]
+}

@@ -1,0 +1,22 @@
+name: Copilot PR auto-fix
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  autofix:
+    # Pin to a commit SHA or a tag instead of @main for reproducible runs.
+    uses: SomoneIT/.github/.github/workflows/copilot-pr-auto-fix.yml@main
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      ci-workflow-name: "CI"
+      autofix-limit: 3
+    secrets:
+      COPILOT_AGENT_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN }}

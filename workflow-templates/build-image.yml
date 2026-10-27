@@ -1,0 +1,20 @@
+name: Build image
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Pin to a commit SHA or a tag instead of @main for reproducible runs.
+    uses: SomoneIT/.github/.github/workflows/build-image.yml@main
+    with:
+      image-org: my-org
+      image-name: my-image
+      image-version: ${{ github.event.release.tag_name }}
+      dockerhub-username: ${{ vars.DOCKER_USERNAME }}
+    secrets:
+      dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}

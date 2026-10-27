@@ -1,0 +1,8 @@
+{
+  "name": "DAST (OWASP ZAP)",
+  "description": "Run an OWASP ZAP baseline scan against a deployed environment.",
+  "iconName": "octicon workflow",
+  "categories": [
+    "Security"
+  ]
+}
