@@ -1,0 +1,159 @@
+# Reusable workflow: check lock files for end-of-life and yanked dependencies
+# and keep one tracking issue up to date. The caller owns the schedule trigger.
+# Usage:
+#   jobs:
+#     eol:
+#       uses: SomoneIT/.github/.github/workflows/eol-check.yml@main
+#       with:
+#         python-lock: uv.lock
+#         python-project: pyproject.toml
+#         first-party-prefixes: |
+#           acme-
+#       secrets:
+#         COPILOT_AGENT_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN }}
+# Pin to a commit SHA or a tag instead of @main for reproducible runs.
+
+name: EOL check
+
+on:
+  workflow_call:
+    inputs:
+      python-lock:
+        description: "Path to uv.lock (empty to skip Python)"
+        required: false
+        type: string
+        default: ""
+      python-project:
+        description: "Path to pyproject.toml or its directory"
+        required: false
+        type: string
+        default: ""
+      npm-lock:
+        description: "Path to yarn.lock or package-lock.json (empty to skip npm)"
+        required: false
+        type: string
+        default: ""
+      npm-package-json:
+        description: "Path to package.json"
+        required: false
+        type: string
+        default: ""
+      cargo-lock:
+        description: "Path to Cargo.lock (empty to skip Rust)"
+        required: false
+        type: string
+        default: ""
+      cargo-toml:
+        description: "Path to Cargo.toml"
+        required: false
+        type: string
+        default: ""
+      first-party-prefixes:
+        description: "Newline-separated package name prefixes to skip"
+        required: false
+        type: string
+        default: ""
+      ignore-file:
+        description: "Optional JSON file listing findings to ignore"
+        required: false
+        type: string
+        default: ""
+      warn-days:
+        description: "Warn this many days before end of life"
+        required: false
+        type: number
+        default: 90
+      assignee:
+        description: "GitHub login to assign the tracking issue to (empty = no assignee)"
+        required: false
+        type: string
+        default: ""
+      python-version:
+        description: "Python version used to run the check"
+        required: false
+        type: string
+        default: "3.12"
+      scripts-ref:
+        description: "Ref of SomoneIT/.github providing the shared scripts"
+        required: false
+        type: string
+        default: "main"
+    secrets:
+      COPILOT_AGENT_TOKEN:
+        description: "Optional token used to open the issue and assign it to Copilot; falls back to the workflow token"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  eol:
+    name: Dependency lifecycle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    env:
+      PYTHON_LOCK: ${{ inputs.python-lock }}
+      PYTHON_PROJECT: ${{ inputs.python-project }}
+      NPM_LOCK: ${{ inputs.npm-lock }}
+      NPM_PACKAGE_JSON: ${{ inputs.npm-package-json }}
+      CARGO_LOCK: ${{ inputs.cargo-lock }}
+      CARGO_TOML: ${{ inputs.cargo-toml }}
+      PREFIXES: ${{ inputs.first-party-prefixes }}
+      IGNORE_FILE: ${{ inputs.ignore-file }}
+      WARN_DAYS: ${{ inputs.warn-days }}
+      ASSIGNEE: ${{ inputs.assignee }}
+      REPOSITORY: ${{ github.repository }}
+      ISSUE_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN || github.token }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout shared scripts
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: SomoneIT/.github
+          ref: ${{ inputs.scripts-ref }}
+          path: .org-github
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - name: Run EOL check
+        id: check
+        run: |
+          args=(--warn-days "$WARN_DAYS" --user-agent "${REPOSITORY}-eol-check" --output "$RUNNER_TEMP/eol-report.md")
+          [ -n "$PYTHON_LOCK" ] && args+=(--python-lock "$PYTHON_LOCK")
+          [ -n "$PYTHON_PROJECT" ] && args+=(--python-project "$PYTHON_PROJECT")
+          [ -n "$NPM_LOCK" ] && args+=(--npm-lock "$NPM_LOCK")
+          [ -n "$NPM_PACKAGE_JSON" ] && args+=(--npm-package-json "$NPM_PACKAGE_JSON")
+          [ -n "$CARGO_LOCK" ] && args+=(--cargo-lock "$CARGO_LOCK")
+          [ -n "$CARGO_TOML" ] && args+=(--cargo-toml "$CARGO_TOML")
+          [ -n "$IGNORE_FILE" ] && args+=(--ignore-file "$IGNORE_FILE")
+          while IFS= read -r prefix; do
+            [ -n "$prefix" ] && args+=(--first-party-prefix "$prefix")
+          done <<< "$PREFIXES"
+          python3 .org-github/scripts/check_eol.py "${args[@]}"
+
+      - name: Create or update tracking issue
+        if: steps.check.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ env.ISSUE_TOKEN }}
+        run: |
+          TITLE="Dependency end-of-life report"
+          NUMBER=$(gh issue list --repo "$REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number,title \
+            --jq "[.[] | select(.title == \"$TITLE\")][0].number // empty")
+          if [ -n "$NUMBER" ]; then
+            gh issue edit "$NUMBER" --repo "$REPOSITORY" --body-file "$RUNNER_TEMP/eol-report.md"
+          elif [ -n "$ASSIGNEE" ]; then
+            gh issue create --repo "$REPOSITORY" --title "$TITLE" --body-file "$RUNNER_TEMP/eol-report.md" --assignee "$ASSIGNEE"
+          else
+            gh issue create --repo "$REPOSITORY" --title "$TITLE" --body-file "$RUNNER_TEMP/eol-report.md"
+          fi

@@ -1,0 +1,121 @@
+# Reusable workflow: run an OWASP ZAP baseline scan against a deployed environment.
+# The ZAP context (base64) and the scan user come from secrets. The caller owns the trigger.
+# Usage:
+#   jobs:
+#     dast:
+#       uses: SomoneIT/.github/.github/workflows/dast.yml@main
+#       with:
+#         environment: staging
+#       secrets:
+#         DAST_CONTEXT_B64: ${{ secrets.DAST_CONTEXT_B64 }}
+#         DAST_USERNAME: ${{ secrets.DAST_USERNAME }}
+# Pin to a commit SHA or a tag instead of @main for reproducible runs.
+
+name: DAST
+
+on:
+  workflow_call:
+    inputs:
+      context-filename:
+        description: "File name the ZAP context is written to"
+        required: false
+        type: string
+        default: "zap.context"
+      rules-file:
+        description: "Path (in the caller repo) of the ZAP rules file; skipped if the file does not exist"
+        required: false
+        type: string
+        default: ".zap/rules.tsv"
+      environment:
+        description: "GitHub environment name of the scan target"
+        required: false
+        type: string
+        default: "staging"
+      allowed-hosts:
+        description: "Optional newline-separated list of hosts the target must belong to"
+        required: false
+        type: string
+        default: ""
+      zap-image:
+        description: "ZAP container image"
+        required: false
+        type: string
+        default: "ghcr.io/zaproxy/zaproxy:stable"
+      scripts-ref:
+        description: "Ref of SomoneIT/.github providing the shared scripts"
+        required: false
+        type: string
+        default: "main"
+    secrets:
+      DAST_CONTEXT_B64:
+        description: "Base64-encoded ZAP context file"
+        required: true
+      DAST_USERNAME:
+        description: "User defined in the ZAP context used for authentication"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  dast:
+    name: ZAP baseline scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: ${{ inputs.environment }}
+    env:
+      CONTEXT_FILENAME: ${{ inputs.context-filename }}
+      RULES_FILE: ${{ inputs.rules-file }}
+      ALLOWED_HOSTS: ${{ inputs.allowed-hosts }}
+      ZAP_IMAGE: ${{ inputs.zap-image }}
+      DAST_CONTEXT_B64: ${{ secrets.DAST_CONTEXT_B64 }}
+      DAST_USERNAME: ${{ secrets.DAST_USERNAME }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Checkout shared scripts
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: SomoneIT/.github
+          ref: ${{ inputs.scripts-ref }}
+          path: .org-github
+          persist-credentials: false
+
+      - name: Prepare ZAP working directory
+        run: |
+          case "$CONTEXT_FILENAME" in
+            */* | .*) echo "::error::context-filename must be a plain file name"; exit 1 ;;
+          esac
+          mkdir -p "$RUNNER_TEMP/zap"
+          printf '%s' "$DAST_CONTEXT_B64" | base64 -d > "$RUNNER_TEMP/zap/$CONTEXT_FILENAME"
+          if [ -f "$RULES_FILE" ]; then
+            cp "$RULES_FILE" "$RUNNER_TEMP/zap/rules.tsv"
+          fi
+          chmod -R a+rwX "$RUNNER_TEMP/zap"
+
+      - name: Validate scan target
+        run: |
+          args=(--context-file "$RUNNER_TEMP/zap/$CONTEXT_FILENAME")
+          while IFS= read -r host; do
+            [ -n "$host" ] && args+=(--allowed-host "$host")
+          done <<< "$ALLOWED_HOSTS"
+          python3 .org-github/scripts/check_dast_target.py "${args[@]}"
+
+      - name: Run ZAP baseline scan
+        run: |
+          args=(-n "$CONTEXT_FILENAME" -U "$DAST_USERNAME" -r zap-report.html -J zap-report.json -I)
+          [ -f "$RUNNER_TEMP/zap/rules.tsv" ] && args+=(-c rules.tsv)
+          docker run --rm -v "$RUNNER_TEMP/zap:/zap/wrk:rw" "$ZAP_IMAGE" zap-baseline.py "${args[@]}"
+
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: zap-report
+          path: |
+            ${{ runner.temp }}/zap/zap-report.html
+            ${{ runner.temp }}/zap/zap-report.json
+          if-no-files-found: warn

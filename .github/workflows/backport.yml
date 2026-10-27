@@ -1,0 +1,175 @@
+# Reusable workflow: suggest backport labels from a support policy and
+# cherry-pick merged PRs onto release branches.
+# Labels use the form "backport/<version>" and target "<release-branch-prefix><version>".
+# The caller owns the trigger (pull_request_target, types: [opened, reopened, labeled, closed]).
+# The policy file is JSON: {"supported_versions": ["1.2", "1.1"]}.
+# Usage:
+#   jobs:
+#     backport:
+#       uses: SomoneIT/.github/.github/workflows/backport.yml@main
+#       with:
+#         policy-repo: my-org/my-support-repo
+#       secrets:
+#         COPILOT_AGENT_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN }}
+#         BACKPORT_TOKEN: ${{ secrets.BACKPORT_TOKEN }}
+# Pin to a commit SHA or a tag instead of @main for reproducible runs.
+
+name: Backport
+
+on:
+  workflow_call:
+    inputs:
+      policy-repo:
+        description: "Repository (owner/name) holding the support policy; empty skips label suggestions"
+        required: false
+        type: string
+        default: ""
+      policy-path:
+        description: "Path of the support policy JSON in policy-repo"
+        required: false
+        type: string
+        default: "docs/support-policy.json"
+      policy-ref:
+        description: "Ref of policy-repo to read the policy from"
+        required: false
+        type: string
+        default: "main"
+      release-branch-prefix:
+        description: "Prefix of release branches"
+        required: false
+        type: string
+        default: "releases/v"
+    secrets:
+      COPILOT_AGENT_TOKEN:
+        description: "Optional token used to post the suggestion comment; falls back to the workflow token"
+        required: false
+      BACKPORT_TOKEN:
+        description: "Token used to push backport branches and open PRs (required only when a backport label is requested)"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  suggest:
+    name: Suggest backport labels
+    if: >-
+      inputs.policy-repo != '' &&
+      github.event.action == 'opened' &&
+      github.event.pull_request.base.ref == (vars.DEFAULT_BRANCH || github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      POLICY_REPO: ${{ inputs.policy-repo }}
+      POLICY_PATH: ${{ inputs.policy-path }}
+      POLICY_REF: ${{ inputs.policy-ref }}
+      PREFIX: ${{ inputs.release-branch-prefix }}
+      POLICY_TOKEN: ${{ secrets.BACKPORT_TOKEN || github.token }}
+      COMMENT_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN || github.token }}
+    steps:
+      - name: Read support policy
+        id: policy
+        env:
+          GH_TOKEN: ${{ env.POLICY_TOKEN }}
+        run: |
+          if ! gh api "repos/$POLICY_REPO/contents/$POLICY_PATH?ref=$POLICY_REF" \
+              -H "Accept: application/vnd.github.raw+json" > "$RUNNER_TEMP/policy.json"; then
+            echo "::warning::Could not read the support policy, skipping suggestions."
+            echo "versions=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "versions=$(jq -r '(.supported_versions // []) | map(tostring) | join(" ")' "$RUNNER_TEMP/policy.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Comment suggestions
+        if: steps.policy.outputs.versions != ''
+        env:
+          GH_TOKEN: ${{ env.COMMENT_TOKEN }}
+          VERSIONS: ${{ steps.policy.outputs.versions }}
+        run: |
+          {
+            echo "<!-- backport-suggestion -->"
+            echo "Supported release lines according to the support policy. Add a label to backport this PR once merged:"
+            echo
+            for version in $VERSIONS; do
+              echo "- \`backport/$version\` (targets \`$PREFIX$version\`)"
+            done
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body-file "$RUNNER_TEMP/comment.md"
+
+  backport:
+    name: Backport merged PR
+    if: >-
+      github.event.pull_request.merged == true &&
+      (github.event.action == 'closed' || github.event.action == 'labeled') &&
+      contains(join(github.event.pull_request.labels.*.name, ','), 'backport/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_TITLE: ${{ github.event.pull_request.title }}
+      MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+      LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+      PREFIX: ${{ inputs.release-branch-prefix }}
+      BACKPORT_TOKEN: ${{ secrets.BACKPORT_TOKEN }}
+    steps:
+      - name: Check token
+        run: |
+          if [ -z "$BACKPORT_TOKEN" ]; then
+            echo "::error::A backport label is set but the BACKPORT_TOKEN secret is not provided."
+            exit 1
+          fi
+
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Cherry-pick onto release branches
+        env:
+          GH_TOKEN: ${{ secrets.BACKPORT_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          remote="https://x-access-token:${BACKPORT_TOKEN}@github.com/${REPOSITORY}.git"
+          failed=0
+          for label in $LABELS; do
+            case "$label" in backport/*) ;; *) continue ;; esac
+            version="${label#backport/}"
+            if ! [[ "$version" =~ ^[0-9A-Za-z._-]+$ ]]; then
+              echo "::warning::Ignoring label with unexpected format: $label"
+              continue
+            fi
+            target="$PREFIX$version"
+            branch="backport/$PR_NUMBER-to-${version}"
+            if ! git ls-remote --exit-code --heads "$remote" "$target" >/dev/null; then
+              echo "::warning::Release branch $target does not exist, skipping."
+              failed=1
+              continue
+            fi
+            if [ -n "$(gh pr list --repo "$REPOSITORY" --head "$branch" --state all --json number --jq '.[0].number')" ]; then
+              echo "Backport PR for $branch already exists."
+              continue
+            fi
+            git fetch --quiet "$remote" "$target"
+            git checkout -B "$branch" FETCH_HEAD
+            if git cherry-pick -x -m 1 "$MERGE_SHA" 2>/dev/null || git cherry-pick -x "$MERGE_SHA"; then
+              git push "$remote" "$branch"
+              gh pr create --repo "$REPOSITORY" --base "$target" --head "$branch" \
+                --title "[backport $version] $PR_TITLE" \
+                --body "Automated backport of #$PR_NUMBER to \`$target\`."
+            else
+              git cherry-pick --abort || true
+              echo "::error::Cherry-pick of #$PR_NUMBER onto $target failed, backport manually."
+              failed=1
+            fi
+          done
+          exit "$failed"
