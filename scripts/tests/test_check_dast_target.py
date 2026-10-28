@@ -20,6 +20,16 @@ class DastTargetTests(unittest.TestCase):
             dast.extract_target(r"https://staging\.example\.com/.*"), "https://staging.example.com/"
         )
 
+    def test_extract_escaped_scheme(self):
+        self.assertEqual(
+            dast.extract_targets(r"https://ok.example.com/.* https:\/\/10\.0\.0\.1/.*"),
+            ["https://ok.example.com/", "https://10.0.0.1/"],
+        )
+
+    def test_extract_undeterminable_origin(self):
+        with self.assertRaises(dast.TargetError):
+            dast.extract_targets(r"(https|http)://example.com/.*")
+
     def test_extract_unsupported_regex(self):
         for text in (r"https://(a|b)\.com", r"https://a\d.com"):
             with self.assertRaises(dast.TargetError):
