@@ -128,7 +128,7 @@ def parse_cargo_lock(text: str) -> list[Package]:
     return [
         Package("crates.io", pkg["name"], pkg["version"])
         for pkg in data.get("package", [])
-        if str(pkg.get("source", "")).startswith("registry+")
+        if pkg.get("source") == "registry+https://github.com/rust-lang/crates.io-index"
     ]
 
 
