@@ -46,7 +46,7 @@ def _decode_literal(text: str, start: int) -> str:
         if char.isspace() or char in "<>\"'":
             break
         if char in "^$()*?|[]{}+":
-            if "/" not in "".join(chars)[len("https://") :] and char not in "*$":
+            if "/" not in "".join(chars)[len("https://") :] and char != "$":
                 raise TargetError(f"unsupported regex pattern in target host: {text[start:i + 1]!r}")
             break
         chars.append(char)

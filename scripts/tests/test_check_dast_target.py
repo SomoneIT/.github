@@ -4,7 +4,7 @@ import _path  # noqa: F401
 import check_dast_target as dast
 
 CONTEXT = """<configuration><context><name>c</name>
-<incregexes>https://staging.example.com.*</incregexes></context></configuration>"""
+<incregexes>https://staging.example.com/.*</incregexes></context></configuration>"""
 
 
 def public(_host):
@@ -13,11 +13,11 @@ def public(_host):
 
 class DastTargetTests(unittest.TestCase):
     def test_extract(self):
-        self.assertEqual(dast.extract_target(CONTEXT), "https://staging.example.com")
+        self.assertEqual(dast.extract_target(CONTEXT), "https://staging.example.com/")
 
     def test_extract_escaped_regex(self):
         self.assertEqual(
-            dast.extract_target(r"https://staging\.example\.com.*"), "https://staging.example.com"
+            dast.extract_target(r"https://staging\.example\.com/.*"), "https://staging.example.com/"
         )
 
     def test_extract_unsupported_regex(self):
@@ -25,14 +25,18 @@ class DastTargetTests(unittest.TestCase):
             with self.assertRaises(dast.TargetError):
                 dast.extract_target(text)
 
+    def test_extract_rejects_unbounded_authority(self):
+        with self.assertRaises(dast.TargetError):
+            dast.extract_target(r"https://staging\.example\.com.*")
+
     def test_extract_all_scope_urls(self):
         context = (
-            "<configuration><context><incregexes>https://a.example.com.*</incregexes>"
-            "<incregexes>https://10.0.0.1.*</incregexes>"
+            "<configuration><context><incregexes>https://a.example.com/.*</incregexes>"
+            "<incregexes>https://10.0.0.1/.*</incregexes>"
             "<excregexes>https://skip.example.com.*</excregexes></context></configuration>"
         )
         self.assertEqual(
-            dast.extract_targets(context), ["https://a.example.com", "https://10.0.0.1"]
+            dast.extract_targets(context), ["https://a.example.com/", "https://10.0.0.1/"]
         )
 
     def test_extract_missing(self):
