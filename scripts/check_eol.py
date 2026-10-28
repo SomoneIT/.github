@@ -92,6 +92,15 @@ def parse_yarn_lock(text: str) -> list[Package]:
 def parse_package_lock(text: str) -> list[Package]:
     data = json.loads(text)
     packages = []
+    if data.get("lockfileVersion") == 1:
+        def collect_legacy(dependencies: dict) -> None:
+            for name, info in dependencies.items():
+                if info.get("version"):
+                    packages.append(Package("npm", name, info["version"]))
+                collect_legacy(info.get("dependencies", {}))
+
+        collect_legacy(data.get("dependencies", {}))
+        return packages
     for path, info in data.get("packages", {}).items():
         if "node_modules/" not in path or not info.get("version") or info.get("link"):
             continue
