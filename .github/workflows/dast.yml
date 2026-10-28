@@ -97,6 +97,7 @@ jobs:
           chmod -R a+rwX "$RUNNER_TEMP/zap"
 
       - name: Validate scan target
+        id: target
         run: |
           args=(--context-file "$RUNNER_TEMP/zap/$CONTEXT_FILENAME")
           while IFS= read -r host; do
@@ -105,8 +106,10 @@ jobs:
           python3 .org-github/scripts/check_dast_target.py "${args[@]}"
 
       - name: Run ZAP baseline scan
+        env:
+          TARGET: ${{ steps.target.outputs.target }}
         run: |
-          args=(-n "$CONTEXT_FILENAME" -U "$DAST_USERNAME" -r zap-report.html -J zap-report.json -I)
+          args=(-t "$TARGET" -n "$CONTEXT_FILENAME" -U "$DAST_USERNAME" -r zap-report.html -J zap-report.json -I)
           [ -f "$RUNNER_TEMP/zap/rules.tsv" ] && args+=(-c rules.tsv)
           docker run --rm -v "$RUNNER_TEMP/zap:/zap/wrk:rw" "$ZAP_IMAGE" zap-baseline.py "${args[@]}"
 
