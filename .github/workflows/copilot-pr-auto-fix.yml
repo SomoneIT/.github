@@ -98,7 +98,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN }}
           ATTEMPTS: ${{ steps.limit.outputs.attempts }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          CURRENT_HEAD=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json state,headRefOid --jq 'select(.state == "OPEN") | .headRefOid')
+          if [ "$CURRENT_HEAD" != "$RUN_HEAD_SHA" ]; then
+            echo "::notice::Skipping CI result for a closed PR or superseded commit."
+            exit 0
+          fi
           {
             echo "<!-- copilot-autofix -->"
             echo "@copilot the \`$CI_NAME\` workflow failed on this PR (attempt $((ATTEMPTS + 1)) of $AUTOFIX_LIMIT)."
