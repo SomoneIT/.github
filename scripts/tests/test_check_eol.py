@@ -94,6 +94,15 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(names, {"a", "b"})
         self.assertEqual(node, "20")
 
+    def test_node_engine_constraints(self):
+        for constraint, expected in [
+            ("^18.0.0", "18"), ("18.x", "18"), ("18", "18"), ("~20.1", "20"),
+            (">=18 <22", "18"), ("^16 || ^18", "16"), ("14 - 18", "14"), ("", None),
+        ]:
+            self.assertEqual(eol._node_major(constraint), expected, constraint)
+        with self.assertRaises(ValueError):
+            eol._node_major("<22")
+
     def test_cargo(self):
         self.assertEqual([p.name for p in eol.parse_cargo_lock(CARGO_LOCK)], ["serde"])
         deps = eol.parse_cargo_toml('[dependencies]\nserde = "1"\n[dev-dependencies]\nx = { package = "y", version = "1" }\n')

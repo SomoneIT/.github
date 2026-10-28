@@ -128,6 +128,28 @@ def parse_npm_lock(path: Path) -> list[Package]:
     return parse_yarn_lock(text)
 
 
+def _node_major(constraint: str) -> str | None:
+    """Return the lowest Node major allowed by an engines.node semver range."""
+    if not constraint.strip():
+        return None
+    lowest = []
+    for alternative in constraint.split("||"):
+        alternative = re.sub(r"\s+-\s+.*", "", alternative.strip())
+        alternative = re.sub(r"(>=|<=|>|<|\^|~|=)\s+", r"\1", alternative)
+        majors = []
+        for token in alternative.split():
+            if token.startswith(("<", "<=")):
+                continue
+            match = re.fullmatch(r"(?:>=|>|\^|~|=)?v?(\d+)(?:\.(?:\d+|[xX*]))*(?:[-+][\w.+-]+)?", token)
+            if not match:
+                raise ValueError(f"Cannot determine a Node version from engines.node {constraint!r}")
+            majors.append(int(match.group(1)))
+        if not majors:
+            raise ValueError(f"Cannot determine a Node version from engines.node {constraint!r}")
+        lowest.append(max(majors))
+    return str(min(lowest))
+
+
 def parse_package_json(text: str) -> tuple[set[str], str | None]:
     """Return (direct dependency names, minimum Node cycle such as '20')."""
     data = json.loads(text)
@@ -136,8 +158,7 @@ def parse_package_json(text: str) -> tuple[set[str], str | None]:
         for key in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
         for name in data.get(key, {})
     }
-    match = re.search(r">=\s*v?(\d+)", data.get("engines", {}).get("node", ""))
-    return names, match.group(1) if match else None
+    return names, _node_major(data.get("engines", {}).get("node", ""))
 
 
 def parse_cargo_lock(text: str) -> list[Package]:
