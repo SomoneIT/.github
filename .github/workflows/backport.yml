@@ -158,7 +158,8 @@ jobs:
               fi
             fi
           fi
-          for label in $LABELS; do
+          mapfile -t labels < <(jq -r '.pull_request.labels[].name' "$GITHUB_EVENT_PATH")
+          for label in "${labels[@]}"; do
             case "$label" in backport/*) ;; *) continue ;; esac
             version="${label#backport/}"
             if ! [[ "$version" =~ ^[0-9A-Za-z._-]+$ ]]; then
