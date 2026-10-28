@@ -150,12 +150,18 @@ jobs:
           if [ "$(git rev-list --parents -n 1 "$MERGE_SHA" | wc -w)" -gt 2 ]; then
             pick_args=(-x -m 1)
           elif [ "$PR_COMMITS" -gt 1 ]; then
-            last_headline="$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/commits?per_page=100" --paginate --jq '.[-1].commit.message | split("\n")[0]' | tail -n 1)"
-            if [ "$(git log -1 --format=%s "$MERGE_SHA")" = "$last_headline" ]; then
-              if ! mapfile -t picks < <(git rev-list --reverse "$MERGE_SHA~$((PR_COMMITS - 1))^..$MERGE_SHA"); then
-                echo "::error::Could not determine the rebased commits of #$PR_NUMBER, backport manually."
+            pr_id="$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" -H "Accept: application/vnd.github.diff" | git patch-id --stable | cut -d' ' -f1)"
+            squash_id="$(git diff "$MERGE_SHA^" "$MERGE_SHA" | git patch-id --stable | cut -d' ' -f1)"
+            if [ -z "$pr_id" ] || [ "$pr_id" != "$squash_id" ]; then
+              range_id=""
+              if git rev-parse --verify --quiet "$MERGE_SHA~$PR_COMMITS" >/dev/null; then
+                range_id="$(git diff "$MERGE_SHA~$PR_COMMITS" "$MERGE_SHA" | git patch-id --stable | cut -d' ' -f1)"
+              fi
+              if [ -z "$pr_id" ] || [ "$pr_id" != "$range_id" ]; then
+                echo "::error::Could not verify the merged commits of #$PR_NUMBER against the PR changes, backport manually."
                 exit 1
               fi
+              mapfile -t picks < <(git rev-list --reverse "$MERGE_SHA~$PR_COMMITS..$MERGE_SHA")
             fi
           fi
           mapfile -t labels < <(jq -r '.pull_request.labels[].name' "$GITHUB_EVENT_PATH")
