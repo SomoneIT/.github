@@ -116,6 +116,7 @@ jobs:
       PR_NUMBER: ${{ github.event.pull_request.number }}
       PR_TITLE: ${{ github.event.pull_request.title }}
       MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+      PR_COMMITS: ${{ github.event.pull_request.commits }}
       LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
       PREFIX: ${{ inputs.release-branch-prefix }}
       BACKPORT_TOKEN: ${{ secrets.BACKPORT_TOKEN }}
@@ -141,6 +142,19 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           remote="https://x-access-token:${BACKPORT_TOKEN}@github.com/${REPOSITORY}.git"
           failed=0
+          picks=("$MERGE_SHA")
+          pick_args=(-x)
+          if [ "$(git rev-list --parents -n 1 "$MERGE_SHA" | wc -w)" -gt 2 ]; then
+            pick_args=(-x -m 1)
+          elif [ "$PR_COMMITS" -gt 1 ]; then
+            last_headline="$(gh api "repos/$REPOSITORY/pulls/$PR_NUMBER/commits?per_page=100" --paginate --jq '.[-1].commit.message | split("\n")[0]' | tail -n 1)"
+            if [ "$(git log -1 --format=%s "$MERGE_SHA")" = "$last_headline" ]; then
+              if ! mapfile -t picks < <(git rev-list --reverse "$MERGE_SHA~$((PR_COMMITS - 1))^..$MERGE_SHA"); then
+                echo "::error::Could not determine the rebased commits of #$PR_NUMBER, backport manually."
+                exit 1
+              fi
+            fi
+          fi
           for label in $LABELS; do
             case "$label" in backport/*) ;; *) continue ;; esac
             version="${label#backport/}"
@@ -161,7 +175,7 @@ jobs:
             fi
             git fetch --quiet "$remote" "$target"
             git checkout -B "$branch" FETCH_HEAD
-            if git cherry-pick -x -m 1 "$MERGE_SHA" 2>/dev/null || git cherry-pick -x "$MERGE_SHA"; then
+            if git cherry-pick "${pick_args[@]}" "${picks[@]}"; then
               git push "$remote" "$branch"
               gh pr create --repo "$REPOSITORY" --base "$target" --head "$branch" \
                 --title "[backport $version] $PR_TITLE" \
