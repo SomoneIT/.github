@@ -25,6 +25,16 @@ class DastTargetTests(unittest.TestCase):
             with self.assertRaises(dast.TargetError):
                 dast.extract_target(text)
 
+    def test_extract_all_scope_urls(self):
+        context = (
+            "<configuration><context><incregexes>https://a.example.com.*</incregexes>"
+            "<incregexes>https://10.0.0.1.*</incregexes>"
+            "<excregexes>https://skip.example.com.*</excregexes></context></configuration>"
+        )
+        self.assertEqual(
+            dast.extract_targets(context), ["https://a.example.com", "https://10.0.0.1"]
+        )
+
     def test_extract_missing(self):
         with self.assertRaises(dast.TargetError):
             dast.extract_target("<configuration/>")

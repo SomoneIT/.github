@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Validate the target of a DAST (OWASP ZAP) scan before it runs.
 
-Reads a ZAP context file, extracts the first URL (from <incregexes> or a bare
-URL) and refuses targets that are not https or that point at loopback, private
+Reads a ZAP context file, extracts every URL in scope (includes, authentication
+endpoints, or a bare URL; excluded regexes are ignored) and refuses targets that are not https or that point at loopback, private
 or link-local addresses. Optional --allowed-host (repeatable) restricts the
-target to specific host names. Writes `target=<url>` to $GITHUB_OUTPUT.
+target to specific host names. Writes `target=<first url>` to $GITHUB_OUTPUT.
 """
 
 from __future__ import annotations
@@ -52,17 +52,25 @@ def _decode_literal(text: str, start: int) -> str:
     return "".join(chars).rstrip(".")
 
 
-def extract_target(context_text: str) -> str:
+def extract_targets(context_text: str) -> list[str]:
     try:
         root = ET.fromstring(context_text)  # noqa: S314
-        candidates = [el.text or "" for el in root.iter() if el.tag in ("incregexes", "url")]
+        excluded = {id(el) for ex in root.iter("excregexes") for el in ex.iter()}
+        candidates = [el.text or "" for el in root.iter() if id(el) not in excluded]
     except ET.ParseError:
         candidates = [context_text]
-    for text in candidates:
-        match = re.search(r"https?://", text)
-        if match:
-            return _decode_literal(text, match.start())
-    raise TargetError("no target URL found in context file")
+    targets = [
+        _decode_literal(text, match.start())
+        for text in candidates
+        for match in re.finditer(r"https?://", text)
+    ]
+    if not targets:
+        raise TargetError("no target URL found in context file")
+    return targets
+
+
+def extract_target(context_text: str) -> str:
+    return extract_targets(context_text)[0]
 
 
 def resolve_host(host: str) -> list[str]:
@@ -105,9 +113,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--allowed-host", action="append", default=[])
     args = parser.parse_args(argv)
     try:
-        target = validate_target(
-            extract_target(Path(args.context_file).read_text(encoding="utf-8")), args.allowed_host
-        )
+        targets = extract_targets(Path(args.context_file).read_text(encoding="utf-8"))
+        validated = [validate_target(url, args.allowed_host) for url in targets]
+        target = validated[0]
     except (TargetError, OSError) as err:
         print(f"error: {err}", file=sys.stderr)
         return 1
