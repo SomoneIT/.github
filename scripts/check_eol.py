@@ -58,6 +58,20 @@ def _requirement_name(requirement: str) -> str | None:
     return normalize(match.group(1)) if match else None
 
 
+def _python_cycle(specifier: str) -> str | None:
+    """Return the lowest Python cycle allowed by a requires-python specifier."""
+    if not specifier.strip():
+        return None
+    cycles = []
+    for clause in specifier.split(","):
+        match = re.fullmatch(r"\s*(>=|>|==|===|~=)\s*v?(\d+\.\d+)(?:\.[\w*]+)*\s*", clause)
+        if match:
+            cycles.append(match.group(2))
+    if not cycles:
+        raise ValueError(f"Cannot determine a Python version from requires-python {specifier!r}")
+    return max(cycles, key=lambda c: tuple(map(int, c.split("."))))
+
+
 def parse_pyproject(text: str) -> tuple[set[str], str | None]:
     """Return (direct dependency names, minimum Python cycle such as '3.11')."""
     data = tomllib.loads(text)
@@ -68,8 +82,7 @@ def parse_pyproject(text: str) -> tuple[set[str], str | None]:
     for group in data.get("dependency-groups", {}).values():
         requirements.extend(item for item in group if isinstance(item, str))
     names = {n for n in map(_requirement_name, requirements) if n}
-    match = re.search(r">=\s*(\d+\.\d+)", project.get("requires-python", ""))
-    return names, match.group(1) if match else None
+    return names, _python_cycle(project.get("requires-python", ""))
 
 
 def parse_yarn_lock(text: str) -> list[Package]:

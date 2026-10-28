@@ -67,6 +67,17 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(names, {"django", "pytest"})
         self.assertEqual(py, "3.11")
 
+    def test_pyproject_requires_python_forms(self):
+        def cycle(spec):
+            return eol.parse_pyproject(f'[project]\nrequires-python = "{spec}"\n')[1]
+
+        self.assertEqual(cycle("==3.9.*"), "3.9")
+        self.assertEqual(cycle("~=3.9.0"), "3.9")
+        self.assertEqual(cycle(">=3.9,<4"), "3.9")
+        self.assertEqual(cycle(">=3.9.1"), "3.9")
+        with self.assertRaises(ValueError):
+            cycle("<4")
+
     def test_yarn_v1_and_berry(self):
         v1 = {(p.name, p.version) for p in eol.parse_yarn_lock(YARN_V1)}
         self.assertEqual(v1, {("@scope/pkg", "1.2.3"), ("react", "18.2.0")})
