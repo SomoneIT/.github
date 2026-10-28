@@ -21,6 +21,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 
+_NUMERIC_HOST = re.compile(r"(0x[0-9a-f]+|\d+)(\.(0x[0-9a-f]+|\d+))*\.?")
+
+
 class TargetError(ValueError):
     pass
 
@@ -83,6 +86,8 @@ def validate_target(
     try:
         addresses = [str(ipaddress.ip_address(host))]
     except ValueError:
+        if _NUMERIC_HOST.fullmatch(host):
+            raise TargetError(f"target host is a noncanonical IP literal: {host}") from None
         addresses = resolver(host)
     if not addresses:
         raise TargetError(f"target host does not resolve: {host}")

@@ -44,6 +44,11 @@ class DastTargetTests(unittest.TestCase):
         with self.assertRaises(dast.TargetError):
             dast.validate_target("https://evil.example.com", resolver=lambda _h: ["93.184.216.34", "10.0.0.5"])
 
+    def test_rejects_noncanonical_ip_literals(self):
+        for url in ["https://127.1", "https://2130706433", "https://0x7f.0.0.1", "https://0177.0.0.1"]:
+            with self.subTest(url=url), self.assertRaises(dast.TargetError):
+                dast.validate_target(url, resolver=public)
+
     def test_allowed_hosts(self):
         with self.assertRaises(dast.TargetError):
             dast.validate_target("https://a.example.com", ["b.example.com"], resolver=public)
