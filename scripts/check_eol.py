@@ -28,6 +28,19 @@ EOL_API = "https://endoflife.date/api/{product}.json"
 CRATES_API = "https://crates.io/api/v1/crates/{name}/{version}"
 DEFAULT_USER_AGENT = "org-eol-check"
 HTTP_TIMEOUT = 20
+PRODUCT_SLUGS = {
+    ("npm", "@angular/core"): "angular",
+    ("npm", "@nestjs/core"): "nestjs",
+    ("npm", "@ionic/core"): "ionic",
+    ("npm", "@vue/cli"): "vue",
+    ("npm", "vue"): "vue",
+    ("npm", "next"): "nextjs",
+    ("npm", "nuxt"): "nuxt",
+    ("npm", "react-native"): "react-native",
+    ("pypi", "django"): "django",
+    ("pypi", "pyyaml"): "pyyaml",
+    ("pypi", "scikit-learn"): "scikit-learn",
+}
 
 
 @dataclass(frozen=True)
@@ -315,7 +328,10 @@ def collect_findings(args: argparse.Namespace, today: dt.date) -> list[dict]:
                 continue
             if direct is not None and pkg.name not in direct:
                 continue
-            info = lookup_eol(fetcher, normalize(pkg.name), pkg.version, today, args.warn_days)
+            product = PRODUCT_SLUGS.get((pkg.ecosystem, normalize(pkg.name)))
+            if product is None:
+                product = PRODUCT_SLUGS.get((pkg.ecosystem, pkg.name), normalize(pkg.name))
+            info = lookup_eol(fetcher, product, pkg.version, today, args.warn_days)
             if info:
                 add(pkg.ecosystem, pkg.name, pkg.version, info)
 
