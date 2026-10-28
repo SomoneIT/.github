@@ -142,15 +142,19 @@ jobs:
           done <<< "$PREFIXES"
           python3 .org-github/scripts/check_eol.py "${args[@]}"
 
-      - name: Create or update tracking issue
-        if: steps.check.outputs.count != '0'
+      - name: Create, update or close tracking issue
         env:
           GH_TOKEN: ${{ env.ISSUE_TOKEN }}
+          COUNT: ${{ steps.check.outputs.count }}
         run: |
           TITLE="Dependency end-of-life report"
           NUMBER=$(gh issue list --repo "$REPOSITORY" --state open --search "\"$TITLE\" in:title" --json number,title \
             --jq "[.[] | select(.title == \"$TITLE\")][0].number // empty")
-          if [ -n "$NUMBER" ]; then
+          if [ "$COUNT" = "0" ]; then
+            if [ -n "$NUMBER" ]; then
+              gh issue close "$NUMBER" --repo "$REPOSITORY" --comment "The latest dependency lifecycle check found no remaining findings."
+            fi
+          elif [ -n "$NUMBER" ]; then
             gh issue edit "$NUMBER" --repo "$REPOSITORY" --body-file "$RUNNER_TEMP/eol-report.md"
           elif [ -n "$ASSIGNEE" ]; then
             gh issue create --repo "$REPOSITORY" --title "$TITLE" --body-file "$RUNNER_TEMP/eol-report.md" --assignee "$ASSIGNEE"
