@@ -25,6 +25,30 @@ class TargetError(ValueError):
     pass
 
 
+def _decode_literal(text: str, start: int) -> str:
+    """Read the literal URL prefix at `start`, decoding escaped punctuation (e.g. `\\.`)."""
+    chars: list[str] = []
+    i = start
+    while i < len(text):
+        char = text[i]
+        if char == "\\":
+            nxt = text[i + 1] if i + 1 < len(text) else ""
+            if not nxt or nxt.isalnum() or nxt.isspace():
+                raise TargetError(f"unsupported regex escape in target: {text[start:i + 2]!r}")
+            chars.append(nxt)
+            i += 2
+            continue
+        if char.isspace() or char in "<>\"'":
+            break
+        if char in "^$()*?|[]{}+":
+            if "/" not in "".join(chars)[len("https://") :] and char not in "*$":
+                raise TargetError(f"unsupported regex pattern in target host: {text[start:i + 1]!r}")
+            break
+        chars.append(char)
+        i += 1
+    return "".join(chars).rstrip(".")
+
+
 def extract_target(context_text: str) -> str:
     try:
         root = ET.fromstring(context_text)  # noqa: S314
@@ -32,9 +56,9 @@ def extract_target(context_text: str) -> str:
     except ET.ParseError:
         candidates = [context_text]
     for text in candidates:
-        match = re.search(r"https?://[^\s\\^$()*?|<>\"']+", text)
+        match = re.search(r"https?://", text)
         if match:
-            return match.group(0).rstrip(".")
+            return _decode_literal(text, match.start())
     raise TargetError("no target URL found in context file")
 
 

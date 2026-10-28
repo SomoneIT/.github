@@ -15,6 +15,16 @@ class DastTargetTests(unittest.TestCase):
     def test_extract(self):
         self.assertEqual(dast.extract_target(CONTEXT), "https://staging.example.com")
 
+    def test_extract_escaped_regex(self):
+        self.assertEqual(
+            dast.extract_target(r"https://staging\.example\.com.*"), "https://staging.example.com"
+        )
+
+    def test_extract_unsupported_regex(self):
+        for text in (r"https://(a|b)\.com", r"https://a\d.com"):
+            with self.assertRaises(dast.TargetError):
+                dast.extract_target(text)
+
     def test_extract_missing(self):
         with self.assertRaises(dast.TargetError):
             dast.extract_target("<configuration/>")
