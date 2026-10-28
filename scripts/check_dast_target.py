@@ -13,9 +13,11 @@ import argparse
 import ipaddress
 import os
 import re
+import socket
 import sys
 import urllib.parse
 import xml.etree.ElementTree as ET  # noqa: S405
+from collections.abc import Callable
 from pathlib import Path
 
 
@@ -36,7 +38,18 @@ def extract_target(context_text: str) -> str:
     raise TargetError("no target URL found in context file")
 
 
-def validate_target(url: str, allowed_hosts: list[str] | None = None) -> str:
+def resolve_host(host: str) -> list[str]:
+    try:
+        return sorted({info[4][0] for info in socket.getaddrinfo(host, 443, proto=socket.IPPROTO_TCP)})
+    except socket.gaierror as err:
+        raise TargetError(f"target host does not resolve: {host}") from err
+
+
+def validate_target(
+    url: str,
+    allowed_hosts: list[str] | None = None,
+    resolver: Callable[[str], list[str]] = resolve_host,
+) -> str:
     parsed = urllib.parse.urlsplit(url)
     host = (parsed.hostname or "").lower()
     if parsed.scheme != "https" or not host:
@@ -44,11 +57,14 @@ def validate_target(url: str, allowed_hosts: list[str] | None = None) -> str:
     if host == "localhost" or host.endswith((".local", ".internal")):
         raise TargetError(f"target host is not public: {host}")
     try:
-        address = ipaddress.ip_address(host)
+        addresses = [str(ipaddress.ip_address(host))]
     except ValueError:
-        address = None
-    if address and not address.is_global:
-        raise TargetError(f"target address is not public: {host}")
+        addresses = resolver(host)
+    if not addresses:
+        raise TargetError(f"target host does not resolve: {host}")
+    for text in addresses:
+        if not ipaddress.ip_address(text.split("%")[0]).is_global:
+            raise TargetError(f"target address is not public: {host} -> {text}")
     if allowed_hosts and host not in {h.lower() for h in allowed_hosts}:
         raise TargetError(f"target host {host} is not in the allowed hosts")
     return url
