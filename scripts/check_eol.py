@@ -118,7 +118,11 @@ def parse_npm_lock(path: Path) -> list[Package]:
 def parse_package_json(text: str) -> tuple[set[str], str | None]:
     """Return (direct dependency names, minimum Node cycle such as '20')."""
     data = json.loads(text)
-    names = set(data.get("dependencies", {})) | set(data.get("devDependencies", {}))
+    names = {
+        name
+        for key in ("dependencies", "devDependencies", "optionalDependencies", "peerDependencies")
+        for name in data.get(key, {})
+    }
     match = re.search(r">=\s*v?(\d+)", data.get("engines", {}).get("node", ""))
     return names, match.group(1) if match else None
 
