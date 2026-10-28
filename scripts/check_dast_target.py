@@ -22,6 +22,8 @@ from pathlib import Path
 
 
 _NUMERIC_HOST = re.compile(r"(0x[0-9a-f]+|\d+)(\.(0x[0-9a-f]+|\d+))*\.?")
+_SCHEME = re.compile(r"https?\\?:(?:\\?/){2}")
+_ORIGIN_START = re.compile(r"(\w*)\\?:(?:\\?/){2}")
 
 
 class TargetError(ValueError):
@@ -59,11 +61,12 @@ def extract_targets(context_text: str) -> list[str]:
         candidates = [el.text or "" for el in root.iter() if id(el) not in excluded]
     except ET.ParseError:
         candidates = [context_text]
-    targets = [
-        _decode_literal(text, match.start())
-        for text in candidates
-        for match in re.finditer(r"https?://", text)
-    ]
+    targets = []
+    for text in candidates:
+        for match in _ORIGIN_START.finditer(text):
+            if match.group(1) not in ("http", "https"):
+                raise TargetError(f"cannot determine the origin of scope entry: {text[match.start():match.end() + 40]!r}")
+        targets.extend(_decode_literal(text, m.start()) for m in _SCHEME.finditer(text))
     if not targets:
         raise TargetError("no target URL found in context file")
     return targets
