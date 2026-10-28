@@ -160,9 +160,7 @@ class Fetcher:
                 result = json.load(response)
         except urllib.error.HTTPError as err:
             if err.code != 404:
-                print(f"warning: {url} returned HTTP {err.code}", file=sys.stderr)
-        except (urllib.error.URLError, TimeoutError, ValueError) as err:
-            print(f"warning: {url} failed: {err}", file=sys.stderr)
+                raise
         self._cache[url] = result
         return result
 
