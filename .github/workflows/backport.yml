@@ -109,6 +109,9 @@ jobs:
       contains(join(github.event.pull_request.labels.*.name, ','), 'backport/')
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    concurrency:
+      group: org-backport-${{ github.repository }}-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
     permissions:
       contents: read
     env:
