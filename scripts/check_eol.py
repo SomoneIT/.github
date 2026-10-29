@@ -156,7 +156,10 @@ def _node_major(constraint: str) -> str | None:
             match = re.fullmatch(r"(?:>=|>|\^|~|=)?v?(\d+)(?:\.(?:\d+|[xX*]))*(?:[-+][\w.+-]+)?", token)
             if not match:
                 raise ValueError(f"Cannot determine a Node version from engines.node {constraint!r}")
-            majors.append(int(match.group(1)))
+            major = int(match.group(1))
+            if re.fullmatch(r">v?\d+(?:\.[xX*](?:\.[xX*])?)?", token):
+                major += 1
+            majors.append(major)
         if not majors:
             raise ValueError(f"Cannot determine a Node version from engines.node {constraint!r}")
         lowest.append(max(majors))
