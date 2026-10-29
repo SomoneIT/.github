@@ -184,7 +184,27 @@ jobs:
               continue
             fi
             git fetch --quiet "$remote" "$target"
-            git checkout -B "$branch" FETCH_HEAD
+            target_sha="$(git rev-parse FETCH_HEAD)"
+            if git ls-remote --exit-code --heads "$remote" "$branch" >/dev/null; then
+              git fetch --quiet "$remote" "$branch"
+              existing_sha="$(git rev-parse FETCH_HEAD)"
+              valid=1
+              git merge-base --is-ancestor "$target_sha" "$existing_sha" || valid=0
+              for pick in "${picks[@]}"; do
+                git log --format=%B "$target_sha..$existing_sha" | grep -qF "(cherry picked from commit $pick)" || valid=0
+              done
+              if [ "$valid" -ne 1 ]; then
+                echo "::error::Existing branch $branch does not contain the backport of #$PR_NUMBER, backport manually."
+                failed=1
+                continue
+              fi
+              echo "Reusing existing branch $branch to open the missing backport PR."
+              gh pr create --repo "$REPOSITORY" --base "$target" --head "$branch" \
+                --title "[backport $version] $PR_TITLE" \
+                --body "Automated backport of #$PR_NUMBER to \`$target\`." || failed=1
+              continue
+            fi
+            git checkout -B "$branch" "$target_sha"
             if git cherry-pick "${pick_args[@]}" "${picks[@]}"; then
               git push "$remote" "$branch"
               gh pr create --repo "$REPOSITORY" --base "$target" --head "$branch" \
