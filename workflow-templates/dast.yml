@@ -1,0 +1,21 @@
+name: DAST
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dast:
+    # Pin to a commit SHA or a tag instead of @main for reproducible runs.
+    uses: SomoneIT/.github/.github/workflows/dast.yml@main
+    with:
+      environment: staging
+      context-filename: zap.context
+      rules-file: .zap/rules.tsv
+    secrets:
+      DAST_CONTEXT_B64: ${{ secrets.DAST_CONTEXT_B64 }}
+      DAST_USERNAME: ${{ secrets.DAST_USERNAME }}

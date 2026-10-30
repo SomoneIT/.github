@@ -1,0 +1,17 @@
+name: Python Lint
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    # Pin to a commit SHA or a tag instead of @main for reproducible runs.
+    uses: SomoneIT/.github/.github/workflows/python-lint.yml@main
+    with:
+      working-directory: "."
+      python-version: "3.x"

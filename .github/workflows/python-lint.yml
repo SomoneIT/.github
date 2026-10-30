@@ -2,7 +2,11 @@
 # Usage:
 #   jobs:
 #     lint:
-#       uses:  SomoneIT/. github/. github/workflows/python-lint. yml@main
+#       uses: SomoneIT/.github/.github/workflows/python-lint.yml@main
+#       with:
+#         working-directory: "."
+#         python-version: "3.x"
+# Pin to a commit SHA or a tag instead of @main for reproducible runs.
 
 name: Python Lint
 
@@ -20,10 +24,13 @@ on:
         type: string
         default: "3.x"
 
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Python Code Quality
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
       run:
@@ -31,24 +38,60 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: "0.9.1"
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ inputs.python-version }}
-
-      - name: Lint with Ruff
-        run: uvx ruff check --output-format=github
-
-      - name: Check formatting with Ruff
-        run: uvx ruff format --check --diff
 
       - name: Install dependencies
         run: uv sync --locked --dev
 
+      - name: Detect project tools
+        id: tools
+        run: |
+          for tool in ruff ty; do
+            if uv run --no-sync "$tool" --version >/dev/null 2>&1; then
+              echo "$tool=project" >> "$GITHUB_OUTPUT"
+            else
+              echo "$tool=uvx" >> "$GITHUB_OUTPUT"
+            fi
+          done
+
+      - name: Lint with Ruff
+        env:
+          RUFF_MODE: ${{ steps.tools.outputs.ruff }}
+        run: |
+          if [ "$RUFF_MODE" = "project" ]; then
+            uv run --no-sync ruff check --output-format=github
+          else
+            uvx ruff check --output-format=github
+          fi
+
+      - name: Check formatting with Ruff
+        env:
+          RUFF_MODE: ${{ steps.tools.outputs.ruff }}
+        run: |
+          if [ "$RUFF_MODE" = "project" ]; then
+            uv run --no-sync ruff format --check --diff
+          else
+            uvx ruff format --check --diff
+          fi
+
       - name: Type check with ty
-        run: uvx ty check
+        env:
+          TY_MODE: ${{ steps.tools.outputs.ty }}
+        run: |
+          if [ "$TY_MODE" = "project" ]; then
+            uv run --no-sync ty check
+          else
+            uvx ty check
+          fi
