@@ -48,6 +48,7 @@ class Package:
     ecosystem: str
     name: str
     version: str
+    canonical: str | None = None
 
 
 def normalize(name: str) -> str:
@@ -101,16 +102,22 @@ def parse_pyproject(text: str) -> tuple[set[str], str | None]:
 def parse_yarn_lock(text: str) -> list[Package]:
     packages: dict[tuple[str, str], Package] = {}
     name: str | None = None
+    canonical: str | None = None
     for line in text.splitlines():
         if not line.strip() or line.startswith("#"):
             continue
         if not line.startswith(" "):
             spec = line.rstrip(":").split(",")[0].strip().strip('"')
-            name = spec[: spec.rindex("@")] if "@" in spec[1:] else None
+            at = spec.find("@", 1)
+            name = spec[:at] if at > 0 else None
+            canonical = None
+            target = spec[at + 1 :] if at > 0 else ""
+            if target.startswith("npm:") and "@" in target[5:]:
+                canonical = target[4 : target.rindex("@")]
             continue
         match = re.match(r'\s+version:?\s+"?([^"\s]+)"?\s*$', line)
         if name and match:
-            packages[(name, match.group(1))] = Package("npm", name, match.group(1))
+            packages[(name, match.group(1))] = Package("npm", name, match.group(1), canonical)
             name = None
     return list(packages.values())
 
@@ -130,7 +137,8 @@ def parse_package_lock(text: str) -> list[Package]:
     for path, info in data.get("packages", {}).items():
         if "node_modules/" not in path or not info.get("version") or info.get("link"):
             continue
-        packages.append(Package("npm", path.rsplit("node_modules/", 1)[1], info["version"]))
+        name = path.rsplit("node_modules/", 1)[1]
+        packages.append(Package("npm", name, info["version"], info.get("name")))
     return packages
 
 
@@ -331,9 +339,10 @@ def collect_findings(args: argparse.Namespace, today: dt.date) -> list[dict]:
                 continue
             if direct is not None and pkg.name not in direct:
                 continue
-            product = PRODUCT_SLUGS.get((pkg.ecosystem, normalize(pkg.name)))
+            lookup_name = pkg.canonical or pkg.name
+            product = PRODUCT_SLUGS.get((pkg.ecosystem, normalize(lookup_name)))
             if product is None:
-                product = PRODUCT_SLUGS.get((pkg.ecosystem, pkg.name), normalize(pkg.name))
+                product = PRODUCT_SLUGS.get((pkg.ecosystem, lookup_name), normalize(lookup_name))
             info = lookup_eol(fetcher, product, pkg.version, today, args.warn_days)
             if info:
                 add(pkg.ecosystem, pkg.name, pkg.version, info)
