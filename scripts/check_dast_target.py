@@ -34,6 +34,7 @@ def _decode_literal(text: str, start: int) -> str:
     """Read the literal URL prefix at `start`, decoding escaped punctuation (e.g. `\\.`)."""
     chars: list[str] = []
     i = start
+    scheme_len = len(_SCHEME.match(text, start).group().replace("\\", ""))
     while i < len(text):
         char = text[i]
         if char == "\\":
@@ -45,9 +46,14 @@ def _decode_literal(text: str, start: int) -> str:
             continue
         if char.isspace() or char in "<>\"'":
             break
+        path = "".join(chars)[scheme_len:]
+        if char == "." and "/" not in path:
+            raise TargetError(f"unescaped '.' in target host (use '\\.'): {text[start:i + 1]!r}")
         if char in "^$()*?|[]{}+":
-            if "/" not in "".join(chars)[len("https://") :] and char != "$":
+            if "/" not in path and char != "$":
                 raise TargetError(f"unsupported regex pattern in target host: {text[start:i + 1]!r}")
+            if path.count("/") == 1 and path.endswith("/") and char in "*?{":
+                raise TargetError(f"authority boundary must be mandatory in target: {text[start:i + 1]!r}")
             break
         chars.append(char)
         i += 1

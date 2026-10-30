@@ -4,7 +4,7 @@ import _path  # noqa: F401
 import check_dast_target as dast
 
 CONTEXT = """<configuration><context><name>c</name>
-<incregexes>https://staging.example.com/.*</incregexes></context></configuration>"""
+<incregexes>https://staging\\.example\\.com/.*</incregexes></context></configuration>"""
 
 
 def public(_host):
@@ -22,13 +22,13 @@ class DastTargetTests(unittest.TestCase):
 
     def test_extract_escaped_scheme(self):
         self.assertEqual(
-            dast.extract_targets(r"https://ok.example.com/.* https:\/\/10\.0\.0\.1/.*"),
+            dast.extract_targets(r"https://ok\.example\.com/.* https:\/\/10\.0\.0\.1/.*"),
             ["https://ok.example.com/", "https://10.0.0.1/"],
         )
 
     def test_extract_undeterminable_origin(self):
         with self.assertRaises(dast.TargetError):
-            dast.extract_targets(r"(https|http)://example.com/.*")
+            dast.extract_targets(r"(https|http)://example\.com/.*")
 
     def test_extract_unsupported_regex(self):
         for text in (r"https://(a|b)\.com", r"https://a\d.com"):
@@ -39,10 +39,19 @@ class DastTargetTests(unittest.TestCase):
         with self.assertRaises(dast.TargetError):
             dast.extract_target(r"https://staging\.example\.com.*")
 
+    def test_extract_rejects_wildcard_host_dots(self):
+        with self.assertRaises(dast.TargetError):
+            dast.extract_target(r"https://staging.example\.com/.*")
+
+    def test_extract_rejects_optional_authority_boundary(self):
+        for text in (r"https://staging\.example\.com/?.*", r"https://staging\.example\.com/*"):
+            with self.subTest(text=text), self.assertRaises(dast.TargetError):
+                dast.extract_target(text)
+
     def test_extract_all_scope_urls(self):
         context = (
-            "<configuration><context><incregexes>https://a.example.com/.*</incregexes>"
-            "<incregexes>https://10.0.0.1/.*</incregexes>"
+            "<configuration><context><incregexes>https://a\\.example\\.com/.*</incregexes>"
+            "<incregexes>https://10\\.0\\.0\\.1/.*</incregexes>"
             "<excregexes>https://skip.example.com.*</excregexes></context></configuration>"
         )
         self.assertEqual(
