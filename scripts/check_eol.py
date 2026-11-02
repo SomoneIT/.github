@@ -133,8 +133,12 @@ def parse_package_lock(text: str) -> list[Package]:
     if data.get("lockfileVersion") == 1:
         def collect_legacy(dependencies: dict) -> None:
             for name, info in dependencies.items():
-                if info.get("version"):
-                    packages.append(Package("npm", name, info["version"]))
+                version = info.get("version")
+                if version:
+                    canonical = None
+                    if version.startswith("npm:") and "@" in version[4:]:
+                        canonical, version = version[4:].rsplit("@", 1)
+                    packages.append(Package("npm", name, version, canonical))
                 collect_legacy(info.get("dependencies", {}))
 
         collect_legacy(data.get("dependencies", {}))
