@@ -24,6 +24,7 @@ from pathlib import Path
 _NUMERIC_HOST = re.compile(r"(0x[0-9a-f]+|\d+)(\.(0x[0-9a-f]+|\d+))*\.?")
 _SCHEME = re.compile(r"https?\\?:(?:\\?/){2}")
 _ORIGIN_START = re.compile(r"(\w*)\\?:(?:\\?/){2}")
+_LITERAL_URL_TAGS = frozenset({"loginurl", "pollurl"})
 
 
 class TargetError(ValueError):
@@ -64,15 +65,20 @@ def extract_targets(context_text: str) -> list[str]:
     try:
         root = ET.fromstring(context_text)  # noqa: S314
         excluded = {id(el) for ex in root.iter("excregexes") for el in ex.iter()}
-        candidates = [el.text or "" for el in root.iter() if id(el) not in excluded]
+        candidates = [
+            (el.text or "", el.tag in _LITERAL_URL_TAGS) for el in root.iter() if id(el) not in excluded
+        ]
     except ET.ParseError:
-        candidates = [context_text]
+        candidates = [(context_text, False)]
     targets = []
-    for text in candidates:
+    for text, literal in candidates:
         for match in _ORIGIN_START.finditer(text):
             if match.group(1) not in ("http", "https"):
                 raise TargetError(f"cannot determine the origin of scope entry: {text[match.start():match.end() + 40]!r}")
-        targets.extend(_decode_literal(text, m.start()) for m in _SCHEME.finditer(text))
+        if literal:
+            targets.extend(url for url in [text.strip()] if _SCHEME.match(url))
+        else:
+            targets.extend(_decode_literal(text, m.start()) for m in _SCHEME.finditer(text))
     if not targets:
         raise TargetError("no target URL found in context file")
     return targets
