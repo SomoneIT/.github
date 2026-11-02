@@ -101,24 +101,29 @@ def parse_pyproject(text: str) -> tuple[set[str], str | None]:
 
 def parse_yarn_lock(text: str) -> list[Package]:
     packages: dict[tuple[str, str], Package] = {}
-    name: str | None = None
-    canonical: str | None = None
+    descriptors: list[tuple[str, str | None]] = []
     for line in text.splitlines():
         if not line.strip() or line.startswith("#"):
             continue
         if not line.startswith(" "):
-            spec = line.rstrip(":").split(",")[0].strip().strip('"')
-            at = spec.find("@", 1)
-            name = spec[:at] if at > 0 else None
-            canonical = None
-            target = spec[at + 1 :] if at > 0 else ""
-            if target.startswith("npm:") and "@" in target[5:]:
-                canonical = target[4 : target.rindex("@")]
+            descriptors = []
+            for spec in line.rstrip(":").split(","):
+                spec = spec.strip().strip('"')
+                at = spec.find("@", 1)
+                if at <= 0:
+                    continue
+                target = spec[at + 1 :]
+                canonical = None
+                if target.startswith("npm:") and "@" in target[5:]:
+                    canonical = target[4 : target.rindex("@")]
+                descriptors.append((spec[:at], canonical))
             continue
         match = re.match(r'\s+version:?\s+"?([^"\s]+)"?\s*$', line)
-        if name and match:
-            packages[(name, match.group(1))] = Package("npm", name, match.group(1), canonical)
-            name = None
+        if match:
+            version = match.group(1)
+            for name, canonical in descriptors:
+                packages[(name, version)] = Package("npm", name, version, canonical)
+            descriptors = []
     return list(packages.values())
 
 
