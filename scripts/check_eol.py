@@ -344,7 +344,7 @@ def collect_findings(args: argparse.Namespace, today: dt.date) -> list[dict]:
             if product is None:
                 product = PRODUCT_SLUGS.get((pkg.ecosystem, lookup_name))
             if product is None:
-                continue
+                product = normalize(lookup_name)
             info = lookup_eol(fetcher, product, pkg.version, today, args.warn_days)
             if info:
                 add(pkg.ecosystem, pkg.name, pkg.version, info)
