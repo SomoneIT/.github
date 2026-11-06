@@ -1,0 +1,92 @@
+import unittest
+
+import _path  # noqa: F401
+import check_dast_target as dast
+
+CONTEXT = """<configuration><context><name>c</name>
+<incregexes>https://staging\\.example\\.com/.*</incregexes></context></configuration>"""
+
+
+def public(_host):
+    return ["93.184.216.34"]
+
+
+class DastTargetTests(unittest.TestCase):
+    def test_extract(self):
+        self.assertEqual(dast.extract_target(CONTEXT), "https://staging.example.com/")
+
+    def test_extract_escaped_regex(self):
+        self.assertEqual(
+            dast.extract_target(r"https://staging\.example\.com/.*"), "https://staging.example.com/"
+        )
+
+    def test_extract_escaped_scheme(self):
+        self.assertEqual(
+            dast.extract_targets(r"https://ok\.example\.com/.* https:\/\/10\.0\.0\.1/.*"),
+            ["https://ok.example.com/", "https://10.0.0.1/"],
+        )
+
+    def test_extract_undeterminable_origin(self):
+        with self.assertRaises(dast.TargetError):
+            dast.extract_targets(r"(https|http)://example\.com/.*")
+
+    def test_extract_unsupported_regex(self):
+        for text in (r"https://(a|b)\.com", r"https://a\d.com"):
+            with self.assertRaises(dast.TargetError):
+                dast.extract_target(text)
+
+    def test_extract_rejects_unbounded_authority(self):
+        with self.assertRaises(dast.TargetError):
+            dast.extract_target(r"https://staging\.example\.com.*")
+
+    def test_extract_rejects_wildcard_host_dots(self):
+        with self.assertRaises(dast.TargetError):
+            dast.extract_target(r"https://staging.example\.com/.*")
+
+    def test_extract_rejects_optional_authority_boundary(self):
+        for text in (r"https://staging\.example\.com/?.*", r"https://staging\.example\.com/*"):
+            with self.subTest(text=text), self.assertRaises(dast.TargetError):
+                dast.extract_target(text)
+
+    def test_extract_all_scope_urls(self):
+        context = (
+            "<configuration><context><incregexes>https://a\\.example\\.com/.*</incregexes>"
+            "<incregexes>https://10\\.0\\.0\\.1/.*</incregexes>"
+            "<excregexes>https://skip.example.com.*</excregexes></context></configuration>"
+        )
+        self.assertEqual(
+            dast.extract_targets(context), ["https://a.example.com/", "https://10.0.0.1/"]
+        )
+
+    def test_extract_missing(self):
+        with self.assertRaises(dast.TargetError):
+            dast.extract_target("<configuration/>")
+
+    def test_validate_ok(self):
+        self.assertEqual(dast.validate_target("https://staging.example.com", resolver=public), "https://staging.example.com")
+
+    def test_validate_rejects(self):
+        for url in ["http://example.com", "https://localhost", "https://10.0.0.1", "https://127.0.0.1", "https://svc.internal"]:
+            with self.subTest(url=url), self.assertRaises(dast.TargetError):
+                dast.validate_target(url)
+
+    def test_rejects_hostname_resolving_to_non_public(self):
+        for address in ["127.0.0.1", "10.0.0.5", "169.254.169.254", "::1"]:
+            with self.subTest(address=address), self.assertRaises(dast.TargetError):
+                dast.validate_target("https://evil.example.com", resolver=lambda _h, a=address: [a])
+        with self.assertRaises(dast.TargetError):
+            dast.validate_target("https://evil.example.com", resolver=lambda _h: ["93.184.216.34", "10.0.0.5"])
+
+    def test_rejects_noncanonical_ip_literals(self):
+        for url in ["https://127.1", "https://2130706433", "https://0x7f.0.0.1", "https://0177.0.0.1"]:
+            with self.subTest(url=url), self.assertRaises(dast.TargetError):
+                dast.validate_target(url, resolver=public)
+
+    def test_allowed_hosts(self):
+        with self.assertRaises(dast.TargetError):
+            dast.validate_target("https://a.example.com", ["b.example.com"], resolver=public)
+        dast.validate_target("https://a.example.com", ["A.example.com"], resolver=public)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,9 @@
+{
+  "name": "EOL check (Python)",
+  "description": "Weekly end-of-life check for a Python project.",
+  "iconName": "octicon workflow",
+  "categories": [
+    "Automation",
+    "Python"
+  ]
+}

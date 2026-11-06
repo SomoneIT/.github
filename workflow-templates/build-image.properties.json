@@ -1,0 +1,8 @@
+{
+  "name": "Build Docker image",
+  "description": "Build and publish a Docker image on release.",
+  "iconName": "octicon workflow",
+  "categories": [
+    "Docker"
+  ]
+}

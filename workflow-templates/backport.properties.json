@@ -1,0 +1,8 @@
+{
+  "name": "Backport",
+  "description": "Suggest backport labels and cherry-pick merged PRs onto release branches.",
+  "iconName": "octicon workflow",
+  "categories": [
+    "Automation"
+  ]
+}

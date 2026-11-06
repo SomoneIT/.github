@@ -1,0 +1,9 @@
+{
+  "name": "EOL check (Python + TypeScript)",
+  "description": "Weekly end-of-life check for a TypeScript project.",
+  "iconName": "octicon workflow",
+  "categories": [
+    "Automation",
+    "TypeScript"
+  ]
+}

@@ -1,0 +1,24 @@
+name: EOL check
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eol:
+    # Pin to a commit SHA or a tag instead of @main for reproducible runs.
+    uses: SomoneIT/.github/.github/workflows/eol-check.yml@main
+    permissions:
+      contents: read
+      issues: write
+    with:
+      python-lock: uv.lock
+      python-project: pyproject.toml
+      warn-days: 90
+      # assignee: ""
+    secrets:
+      COPILOT_AGENT_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN }}

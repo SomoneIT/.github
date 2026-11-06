@@ -1,0 +1,113 @@
+# Reusable workflow: when the CI workflow fails on a PR, ask the Copilot agent
+# to fix it, up to a limit of attempts.
+# workflow_run triggers cannot live in a reusable workflow: the caller owns the trigger.
+# Usage:
+#   on:
+#     workflow_run:
+#       workflows: ["CI"]
+#       types: [completed]
+#   jobs:
+#     autofix:
+#       uses: SomoneIT/.github/.github/workflows/copilot-pr-auto-fix.yml@main
+#       with:
+#         ci-workflow-name: "CI"
+#       secrets:
+#         COPILOT_AGENT_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN }}
+# Pin to a commit SHA or a tag instead of @main for reproducible runs.
+
+name: Copilot PR auto-fix
+
+on:
+  workflow_call:
+    inputs:
+      ci-workflow-name:
+        description: "Name of the CI workflow whose failures trigger an auto-fix"
+        required: true
+        type: string
+      autofix-limit:
+        description: "Maximum number of automatic fix attempts per PR"
+        required: false
+        type: number
+        default: 3
+      scripts-ref:
+        description: "Ref of SomoneIT/.github providing the shared scripts"
+        required: false
+        type: string
+        default: "main"
+    secrets:
+      COPILOT_AGENT_TOKEN:
+        description: "Token used to comment on the PR as a user so Copilot picks it up (without it the workflow does nothing)"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  autofix:
+    name: Request auto-fix
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.name == inputs.ci-workflow-name &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      join(github.event.workflow_run.pull_requests.*.number, '') != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: copilot-autofix-${{ github.repository }}-${{ github.event.workflow_run.pull_requests[0].number }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      REPOSITORY: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+      RUN_URL: ${{ github.event.workflow_run.html_url }}
+      CI_NAME: ${{ inputs.ci-workflow-name }}
+      AUTOFIX_LIMIT: ${{ inputs.autofix-limit }}
+      COPILOT_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN }}
+    steps:
+      - name: Check token
+        id: token
+        run: |
+          if [ -z "$COPILOT_TOKEN" ]; then
+            echo "::notice::COPILOT_AGENT_TOKEN is not set, skipping."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout shared scripts
+        if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: SomoneIT/.github
+          ref: ${{ inputs.scripts-ref }}
+          path: .org-github
+          persist-credentials: false
+
+      - name: Check attempt limit
+        id: limit
+        if: steps.token.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .org-github/scripts/copilot_autofix_limit.py
+
+      - name: Ask Copilot to fix the failure
+        if: steps.limit.outputs.allowed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.COPILOT_AGENT_TOKEN }}
+          ATTEMPTS: ${{ steps.limit.outputs.attempts }}
+          RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          CURRENT_HEAD=$(gh pr view "$PR_NUMBER" --repo "$REPOSITORY" --json state,headRefOid --jq 'select(.state == "OPEN") | .headRefOid')
+          if [ "$CURRENT_HEAD" != "$RUN_HEAD_SHA" ]; then
+            echo "::notice::Skipping CI result for a closed PR or superseded commit."
+            exit 0
+          fi
+          {
+            echo "<!-- copilot-autofix -->"
+            echo "@copilot the \`$CI_NAME\` workflow failed on this PR (attempt $((ATTEMPTS + 1)) of $AUTOFIX_LIMIT)."
+            echo "Please inspect the failed run $RUN_URL and push a fix to this branch."
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR_NUMBER" --repo "$REPOSITORY" --body-file "$RUNNER_TEMP/comment.md"

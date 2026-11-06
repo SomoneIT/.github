@@ -1,0 +1,8 @@
+{
+  "name": "Python lint",
+  "description": "Run Ruff and ty through the org reusable workflow.",
+  "iconName": "octicon workflow",
+  "categories": [
+    "Python"
+  ]
+}
